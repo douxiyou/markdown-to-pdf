@@ -1,6 +1,8 @@
 package main
 
 import (
+	"flag"
+	"fmt"
 	"net/http"
 
 	"github.com/douxiyou/md-to-pdf/convert"
@@ -8,10 +10,13 @@ import (
 )
 
 func main() {
+	port := flag.String("port", "3000", "port to listen on")
+	flag.Parse()
+	fmt.Println("port:", *port)
 	e := echo.New()
 	e.GET("/", func(c echo.Context) error {
 		return c.String(http.StatusOK, "Hello, World!")
 	})
 	e.POST("/convert-pdf", convert.HandleMarkdownToPdf)
-	e.Logger.Fatal(e.Start(":3000"))
+	e.Logger.Fatal(e.Start(":" + *port))
 }

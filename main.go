@@ -17,12 +17,29 @@ func main() {
 	flag.Parse()
 	fmt.Println("port:", *port)
 
-	// 初始化chrome
-	err := chrome.InitGlobalChrome()
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize Chrome: %v", err))
+	// 初始化chrome，最多重试5次
+	var err error
+	for i := 0; i < 5; i++ {
+		err = chrome.InitGlobalChrome()
+		if err == nil {
+			break
+		}
+		fmt.Printf("第%d次初始化Chrome失败: %v\n", i+1, err)
+		if i < 4 {
+			// 等待一段时间再重试，逐渐增加等待时间
+			waitTime := time.Duration(i+1) * 2 * time.Second
+			fmt.Printf("等待 %v 后重试...\n", waitTime)
+			time.Sleep(waitTime)
+		}
 	}
-	defer chrome.GlobalCancel()
+
+	if err != nil {
+		fmt.Printf("警告: Chrome初始化失败，但服务将继续运行: %v\n", err)
+		// 不再panic，而是继续运行服务，让后续请求触发初始化
+		// panic(fmt.Sprintf("Failed to initialize Chrome after 5 attempts: %v", err))
+	}
+
+	// 注意：即使Chrome初始化失败，也不调用defer chrome.GlobalCancel()
 
 	// 启动健康检查协程
 	go healthCheck()
@@ -38,7 +55,7 @@ func main() {
 	e.Use(middleware.Recover())
 
 	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Hello, World!")
+		return c.String(http.StatusOK, "Hello, World! Service is running but Chrome may not be initialized yet.")
 	})
 
 	e.POST("/utils/convert-pdf", convert.HandleMarkdownToPdf)
@@ -81,7 +98,18 @@ func healthCheck() {
 			}
 		} else {
 			fmt.Println("Chrome实例未初始化，重新初始化...")
-			err := chrome.InitGlobalChrome()
+			// 增加重试机制
+			var err error
+			for i := 0; i < 3; i++ {
+				err = chrome.InitGlobalChrome()
+				if err == nil {
+					break
+				}
+				fmt.Printf("第%d次重新初始化Chrome失败: %v\n", i+1, err)
+				if i < 2 {
+					time.Sleep(2 * time.Second)
+				}
+			}
 			if err != nil {
 				fmt.Printf("Chrome实例初始化失败: %v\n", err)
 			}

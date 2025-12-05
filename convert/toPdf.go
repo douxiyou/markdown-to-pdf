@@ -64,7 +64,11 @@ func convertHtmlToPdf(htmlContent string) ([]byte, error) {
 	if !chrome.IsInitialized() {
 		log.Println("Chrome实例未初始化或已崩溃，重新初始化...")
 		chrome.Reset()
-		chrome.InitGlobalChrome()
+		err := chrome.InitGlobalChrome()
+		if err != nil {
+			log.Printf("Chrome实例初始化失败: %v", err)
+			return nil, fmt.Errorf("failed to initialize chrome: %w", err)
+		}
 	}
 
 	// 更新最后使用时间

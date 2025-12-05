@@ -2,6 +2,7 @@ package chrome
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -15,9 +16,9 @@ var (
 	GlobalAllocCtx  context.Context
 	GlobalCancel    context.CancelFunc
 	GlobalPdfParams page.PrintToPDFParams
-	poolOnce        sync.Once
 	mu              sync.RWMutex
 	lastUsed        time.Time
+	initialized     bool
 )
 
 // GetLastUsed 获取实例最后使用时间
@@ -38,7 +39,7 @@ func UpdateLastUsed() {
 func IsInitialized() bool {
 	mu.RLock()
 	defer mu.RUnlock()
-	return GlobalAllocCtx != nil && GlobalCancel != nil
+	return initialized && GlobalAllocCtx != nil && GlobalCancel != nil
 }
 
 // Reset 重置Chrome实例
@@ -52,13 +53,22 @@ func Reset() {
 
 	GlobalAllocCtx = nil
 	GlobalCancel = nil
+	initialized = false
 }
 
-// InitGlobalChrome 初始化全局 Chrome 实例（仅启动一次）
-func InitGlobalChrome() {
-	poolOnce.Do(func() {
-		initializeChrome()
-	})
+// InitGlobalChrome 初始化全局 Chrome 实例
+func InitGlobalChrome() error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if initialized {
+		return nil // 已经初始化
+	}
+
+	err := initializeChrome()
+	if err != nil {
+		return err
+	}
 
 	GlobalPdfParams = page.PrintToPDFParams{
 		MarginTop:         0.4,
@@ -68,10 +78,13 @@ func InitGlobalChrome() {
 		PrintBackground:   false,
 		PreferCSSPageSize: true,
 	}
+
+	initialized = true
+	return nil
 }
 
 // initializeChrome 初始化Chrome实例的实际实现
-func initializeChrome() {
+func initializeChrome() error {
 	// 优化后的启动参数（禁用所有冗余功能）
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", "new"),                              // 新无头模式（更快）
@@ -86,7 +99,7 @@ func initializeChrome() {
 		chromedp.Flag("disable-web-security", true),                   // 禁用跨域检查（加速资源加载）
 		chromedp.Flag("ignore-certificate-errors", true),              // 忽略 SSL 错误
 		chromedp.Flag("disable-background-timer-throttling", true),    // 禁用后台定时器节流
-		chromedp.Flag("disable-renderer-backgrounding", true),         // 禁用渲染器后台化
+		chromedp.Flag("disable-renderer-backgrounding", true),         // 禉用渲染器后台化
 		chromedp.Flag("disable-backgrounding-occluded-windows", true), // 禁用后台窗口
 		chromedp.NoFirstRun,                                           // 禁用首次运行引导
 		chromedp.NoDefaultBrowserCheck,                                // 禁用默认浏览器检查
@@ -96,6 +109,26 @@ func initializeChrome() {
 
 	// 创建全局 ExecAllocator（Chrome 进程）
 	GlobalAllocCtx, GlobalCancel = chromedp.NewExecAllocator(context.Background(), opts...)
+
+	// 测试连接确保实例正常工作
+	ctx, cancel := chromedp.NewContext(GlobalAllocCtx)
+	defer cancel()
+
+	// 设置较短的超时时间
+	ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// 简单测试确保Chrome可以正常工作
+	err := chromedp.Run(ctx, chromedp.Navigate("about:blank"))
+	if err != nil {
+		// 初始化失败，清理资源
+		GlobalCancel()
+		GlobalAllocCtx = nil
+		GlobalCancel = nil
+		return fmt.Errorf("failed to test chrome connection: %w", err)
+	}
+
 	log.Println("全局 Chrome 实例初始化完成")
 	UpdateLastUsed()
+	return nil
 }

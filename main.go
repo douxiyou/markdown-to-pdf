@@ -18,7 +18,10 @@ func main() {
 	fmt.Println("port:", *port)
 
 	// 初始化chrome
-	chrome.InitGlobalChrome()
+	err := chrome.InitGlobalChrome()
+	if err != nil {
+		panic(fmt.Sprintf("Failed to initialize Chrome: %v", err))
+	}
 	defer chrome.GlobalCancel()
 
 	// 启动健康检查协程
@@ -71,11 +74,17 @@ func healthCheck() {
 			if time.Since(chrome.GetLastUsed()) > time.Hour {
 				fmt.Println("Chrome实例长时间未使用，重新初始化以保持活跃状态")
 				chrome.Reset()
-				chrome.InitGlobalChrome()
+				err := chrome.InitGlobalChrome()
+				if err != nil {
+					fmt.Printf("Chrome实例重新初始化失败: %v\n", err)
+				}
 			}
 		} else {
 			fmt.Println("Chrome实例未初始化，重新初始化...")
-			chrome.InitGlobalChrome()
+			err := chrome.InitGlobalChrome()
+			if err != nil {
+				fmt.Printf("Chrome实例初始化失败: %v\n", err)
+			}
 		}
 	}
 }
